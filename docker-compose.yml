@@ -1,0 +1,194 @@
+# =============================================================================
+# Petrolimex AI Backend — production compose
+#
+# Run:
+#   docker compose up -d --build
+#   docker compose logs -f petrolimex-ai
+#
+# Default networking is bridge mode (works on Docker Desktop and Linux).
+# This compose also brings an internal PostgreSQL service named `postgres`.
+# If your PostgreSQL runs on the host machine instead, set
+# DB_HOST=host.docker.internal (or another reachable host).
+# `extra_hosts` adds a stable host-gateway mapping on Linux.
+# =============================================================================
+
+services:
+  petrolimex-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Default base image: official NVIDIA PyTorch iGPU for Jetson (JetPack 6.x).
+      # For x86_64 desktop/server, uncomment the override below:
+      # args:
+      #   BASE_IMAGE: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+    image: petrolimex-ai-backend:latest
+    container_name: petrolimex-ai
+    restart: unless-stopped
+
+    # --- Networking ---------------------------------------------------------
+    # WebRTC needs aiortc to advertise LAN-reachable ICE candidates; in
+    # bridge mode it picks the 172.x container IP and the browser never
+    # connects. network_mode: host also lets the container reach the
+    # edge's `local_postgres` at localhost:5433 without extra_hosts.
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # --- Runtime / GPU ------------------------------------------------------
+    # Default: CPU-friendly runtime (`runc`) so unsupported NVIDIA GPUs
+    # still run the service.
+    # On Jetson/NVIDIA hosts, set DOCKER_RUNTIME=nvidia in your shell/.env.
+    runtime: ${DOCKER_RUNTIME:-runc}
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, utility, compute, video]
+
+    # --- Environment --------------------------------------------------------
+    environment:
+      # ====== Explicitly requested by the user ======
+      VSS_FIXED_TOKEN: "ec39f13732a24a5bb4edccbaa787f3de"
+      VSS_STREAM_PORT_HTTP: "33122"
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_USER: "${DB_USER:-dang321}"
+      DB_NAME: "${DB_NAME:-petrobe_db}"
+      DB_PASSWORD: "${DB_PASSWORD:-Dang2510}"
+      DB_PORT: "${DB_PORT:-5432}"
+
+      # ====== Server ======
+      HOST: "0.0.0.0"
+      PORT: "8668"
+      # NEVER enable RELOAD in production — it leaks CUDA + FFmpeg handles on
+      # every file touch. Dev-only.
+      RELOAD: "false"
+      UVICORN_WORKERS: "1"
+      TZ: "Asia/Ho_Chi_Minh"
+      PYTHONUNBUFFERED: "1"
+
+      # ====== Stream robustness ======
+      # FFmpeg socket read timeout in microseconds. 5 000 000 = 5 s — a dead
+      # RTSP stream is detected in ~5 s instead of the default 30 s. Applied
+      # at module import time in src/core/thread_manager.py.
+      RTSP_SOCKET_TIMEOUT_US: "5000000"
+      RTSP_MAX_DELAY_US: "500000"
+      # Number of consecutive failed reads before a forced reconnect. With a
+      # 5 s socket timeout, 5 failures ≈ 25 s worst case.
+      CAMERA_MAX_CONSECUTIVE_FAILURES: "5"
+      # Frame queue is intentionally tiny to minimise latency with drop-oldest.
+      CAMERA_FRAME_QUEUE_SIZE: "2"
+      DROP_OLDEST_ON_FULL: "true"
+      PROCESS_LATEST_FRAME_ONLY: "true"
+      # Cap camera capture FPS on Jetson to keep inference steady.
+      FPS_LIMIT: "5"
+      AI_FPS_LIMIT: "0"
+      # Only throttle the WebRTC-facing raw buffer; 24 fps is smooth enough.
+      RAW_FRAME_BUFFER_FPS: "24"
+
+      # ====== VSS (HTTP-FLV / WebSocket) backends ======
+      VSS_CAPTURE_BACKEND: "auto"
+      VSS_CAMERA_CONNECT_TIMEOUT_SEC: "120"
+      CAMERA_CONNECT_TIMEOUT_SEC: "15"
+      HTTP_FLV_RW_TIMEOUT_US: "10000000"
+      HTTP_FLV_PROBE_TIMEOUT_SEC: "15"
+      # FFmpeg decode acceleration for HTTP-FLV/Howen WS backends:
+      # auto -> try NVIDIA (cuda/cuvid) when available, fallback to CPU.
+      FFMPEG_HW_DECODE: "auto"
+      VSS_LOGIN_TIMEOUT_SEC: "15"
+      VSS_TOKEN_CACHE_TTL_SEC: "1500"
+      VSS_PREFER_LOGIN_TOKEN: "true"
+      VSS_LOGIN_COOLDOWN_SEC: "3"
+      VSS_RATE_LIMIT_BACKOFF_SEC: "120"
+
+      # ====== GPU memory hygiene ======
+      # Periodic torch.cuda.empty_cache() every N processed frames. Bounds
+      # long-running VRAM fragmentation on the Jetson.
+      CUDA_EMPTY_CACHE_EVERY_FRAMES: "600"
+
+      # ====== Features ======
+      ENABLE_FACE_RECOGNITION: "true"
+      PERFORMANCE_MONITOR_INTERVAL: "600"
+
+      # ====== Storage ======
+      EVIDENCE_IMAGE_BASE_PATH: "/app/evidence_image"
+      EVIDENCE_RETENTION_DAYS: "30"
+
+      # ====== WebRTC ======
+      WEBRTC_ENABLED: "true"
+      WEBRTC_STUN_SERVER: "stun:stun.l.google.com:19302"
+      WEBRTC_DEFAULT_FPS: "24"
+      WEBRTC_FRAME_SOURCE: "overlay"
+
+      # ====== RTSP republishing (disabled by default) ======
+      RTSP_OUTPUT_ENABLED: "false"
+      RTSP_OUTPUT_URL: "rtsp://localhost:8554"
+      RTSP_ENCODER: "auto"
+
+      # ====== MQTT bridge ======
+      MQTT_BRIDGE_ENABLED: "false"
+
+      # ====== ORT GPU (Jetson CUDA 13 runtime + pip-installed CUDA 12 libs)
+      # onnxruntime-gpu 1.23 (jp6/cu129 wheel) ships the CUDA + TRT EPs but
+      # their .so files dlopen libcudart.so.12 / libcublas.so.12. Those
+      # live in the nvidia-*-cu12 pip wheels. Extend LD_LIBRARY_PATH so
+      # fast-alpr (ALPR model) and insightface (RetinaFace) actually hit
+      # the CUDA EP instead of falling back to CPU — the heaviest burn in
+      # the whole pipeline.
+      LD_LIBRARY_PATH: "/usr/local/lib/python3.12/dist-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.12/dist-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/dist-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/dist-packages/nvidia/cufft/lib:/usr/local/lib/python3.12/dist-packages/nvidia/curand/lib:/usr/local/lib/python3.12/dist-packages/nvidia/cusparse/lib:/usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib:/usr/local/cuda/targets/sbsa-linux/lib:/usr/lib/aarch64-linux-gnu"
+
+    # --- Volumes ------------------------------------------------------------
+    # Persist evidence images, model weights, and logs on the host so they
+    # survive container rebuilds.
+    volumes:
+      - ./evidence_image:/app/evidence_image
+      - ./src/ai_models/model_weights:/app/src/ai_models/model_weights
+      - ./logs:/app/logs
+      # Optional: mount a .env file in-place if you prefer file-based config.
+      # - ./.env:/app/.env:ro
+
+      # --- Resource hygiene ---------------------------------------------------
+      # Bound log growth so a chatty FFmpeg stderr does not fill the Jetson disk.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    # Shared memory bump helps PyTorch DataLoader workers and OpenCV.
+    shm_size: "2gb"
+
+    # Stop policy: give the app up to 20 s to flush in-flight events + close
+    # FFmpeg subprocesses before SIGKILL.
+    stop_grace_period: 20s
+
+    # Healthcheck mirrors the Dockerfile but tuned for compose visibility.
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://127.0.0.1:8668/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: petrolimex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_NAME:-petrobe_db}"
+      POSTGRES_USER: "${DB_USER:-dang321}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-Dang2510}"
+      TZ: "Asia/Ho_Chi_Minh"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-dang321} -d ${DB_NAME:-petrobe_db}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_data:

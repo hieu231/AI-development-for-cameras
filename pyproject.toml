@@ -1,0 +1,56 @@
+[project]
+name = "petrolimex-ai-backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "psycopg2-binary>=2.9.9",
+    "pyyaml>=6.0.0",
+    "sqlalchemy>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "torch",
+    "torchvision",
+    "pytest",
+    "gradio",
+    "pandas",
+    "httpx",
+    "requests>=2.31.0",
+    "paho-mqtt>=2.1.0",
+    "websocket-client>=1.8.0",
+    "fast-alpr[onnx-gpu]; sys_platform == 'linux'",
+    "fast-alpr; sys_platform != 'linux'",
+    "ultralytics",
+    "openvino>=2024.6.0",
+    "onnxruntime>=1.17.0",
+    "lap>=0.5.12",
+    "scipy",
+    # "tensorrt-cu13-libs @ https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-10.13.2.6-py2.py3-none-manylinux_2_28_x86_64.whl#sha256=044468b0705728c0c8f0e95325ba881ff3e23bd2eebce0b1e628953ff90bbb5f",
+    "facenet-pytorch",
+    "pillow",
+    "pgvector",
+    "websockets>=12.0",
+    "aiortc>=1.9.0",
+    "av>=12.0.0"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+# CUDA PyTorch index - commented out for macOS compatibility
+# Uncomment and configure sources for Linux with CUDA:
+# [[tool.uv.index]]
+# name = "pytorch-cu128"
+# url = "https://download.pytorch.org/whl/cu128"
+# explicit = true
+# 
+# [tool.uv.sources]
+# torch = { index = "pytorch-cu128" }
+# torchvision = { index = "pytorch-cu128" }

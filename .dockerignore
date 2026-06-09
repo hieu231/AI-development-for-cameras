@@ -1,0 +1,47 @@
+# Git / IDE
+.git
+.gitignore
+.github
+.idea
+.vscode
+.claude
+.pytest_cache
+
+# Python cache & venvs
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+petrolimex_ai_backend.egg-info
+build
+dist
+
+# Local runtime artefacts (do NOT copy into the image — mount at runtime)
+evidence_image
+logs
+*.log
+server.log
+nohup.out
+
+# Model weights are volume-mounted at runtime, not baked into the image.
+# Excluding them cuts ~1GB from the Docker build context.
+src/ai_models/model_weights
+
+# Large test assets
+test_video_1.mp4
+test_output.txt
+tests
+
+# Docs / non-code
+*.md
+!README.md
+webrtc_client.html
+websocket_demo.html
+
+# OS
+.DS_Store
+Thumbs.db

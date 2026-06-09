@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petrolimex AI — WebRTC Stream Viewer</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --accent: #4f8cff;
+            --accent-hover: #3a6fd8;
+            --text: #e4e6eb;
+            --muted: #8a8f98;
+            --success: #2ecc71;
+            --error: #e74c3c;
+            --border: #2c2f3a;
+            --radius: 10px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--accent), #a78bfa);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: .75rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+
+        input,
+        select {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: .5rem .85rem;
+            border-radius: var(--radius);
+            font-size: .85rem;
+            outline: none;
+            transition: border-color .2s;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: var(--accent);
+        }
+
+        input::placeholder {
+            color: var(--muted);
+        }
+
+        button {
+            padding: .5rem 1.2rem;
+            border: none;
+            border-radius: var(--radius);
+            font-size: .85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .2s, transform .1s;
+        }
+
+        button:active {
+            transform: scale(.97);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background: var(--error);
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 960px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .5rem .85rem;
+            font-size: .8rem;
+            color: var(--muted);
+            border-top: 1px solid var(--border);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--muted);
+            transition: background .3s;
+        }
+
+        .dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+
+        .dot.error {
+            background: var(--error);
+            box-shadow: 0 0 6px var(--error);
+        }
+
+        #log {
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 960px;
+            max-height: 180px;
+            overflow-y: auto;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: .6rem .85rem;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: .75rem;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <h1>🎥 Petrolimex AI — WebRTC Stream</h1>
+
+    <div class="controls">
+        <input id="serverUrl" type="text" placeholder="Server URL" value="http://192.168.1.15:8668" style="width:220px">
+        <input id="cameraId" type="text" placeholder="Camera UUID" style="width:300px">
+        <select id="fpsSelect">
+            <option value="5">5 FPS</option>
+            <option value="10">10 FPS</option>
+            <option value="24" selected>24 FPS</option>
+            <option value="45">45 FPS</option>
+            <option value="60">60 FPS</option>
+        </select>
+        <button class="btn-primary" id="startBtn" onclick="start()">▶ Start</button>
+        <button class="btn-danger" id="stopBtn" onclick="stop()" disabled>■ Stop</button>
+    </div>
+
+    <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="status-bar">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">Idle</span>
+        </div>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        let pc = null;
+        let connectionId = null;
+
+        function log(msg) {
+            const el = document.getElementById('log');
+            const ts = new Date().toLocaleTimeString();
+            el.innerHTML += `<div>[${ts}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function setStatus(state, text) {
+            const dot = document.getElementById('statusDot');
+            const txt = document.getElementById('statusText');
+            dot.className = 'dot ' + state;
+            txt.textContent = text;
+        }
+
+        async function start() {
+            const serverUrl = document.getElementById('serverUrl').value.replace(/\/+$/, '');
+            const cameraId = document.getElementById('cameraId').value.trim();
+            const fps = parseInt(document.getElementById('fpsSelect').value);
+
+            if (!cameraId) { alert('Enter a Camera UUID'); return; }
+
+            // Cleanup previous
+            if (pc) await stop();
+
+            log('Creating PeerConnection…');
+            setStatus('', 'Connecting…');
+
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            // We only receive video — add a transceiver in recvonly mode
+            pc.addTransceiver('video', { direction: 'recvonly' });
+
+            pc.ontrack = (evt) => {
+                log('Track received: ' + evt.track.kind);
+                document.getElementById('video').srcObject = evt.streams[0];
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                const s = pc.iceConnectionState;
+                log('ICE state: ' + s);
+                if (s === 'connected' || s === 'completed') setStatus('connected', 'Connected');
+                else if (s === 'failed' || s === 'disconnected') setStatus('error', 'Disconnected');
+            };
+
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                log('Sending offer to server…');
+                const resp = await fetch(`${serverUrl}/api/webrtc/offer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        camera_id: cameraId,
+                        sdp: pc.localDescription.sdp,
+                        type: pc.localDescription.type,
+                        fps: fps
+                    })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || resp.statusText);
+                }
+
+                const answer = await resp.json();
+                connectionId = answer.connection_id;
+                log(`Answer received (conn: ${connectionId.slice(0, 8)}…, ${answer.fps} FPS)`);
+
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    sdp: answer.sdp,
+                    type: answer.type
+                }));
+
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+            } catch (e) {
+                log('❌ Error: ' + e.message);
+                setStatus('error', 'Error');
+                pc.close();
+                pc = null;
+            }
+        }
+
+        async function stop() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            // Try to notify server
+            if (connectionId) {
+                const serverUrl = document.getElementById('serverUrl').value.replace(/\/+$/, '');
+                try {
+                    await fetch(`${serverUrl}/api/webrtc/connections/${connectionId}`, { method: 'DELETE' });
+                } catch (_) { }
+                connectionId = null;
+            }
+            document.getElementById('video').srcObject = null;
+            setStatus('', 'Idle');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            log('Stopped');
+        }
+    </script>
+</body>
+
+</html>

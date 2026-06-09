@@ -1,0 +1,29 @@
+psycopg2-binary>=2.9.9
+pyyaml>=6.0.0
+sqlalchemy>=2.0.0
+python-dotenv>=1.0.0
+fastapi
+uvicorn[standard]
+torch
+torchvision
+pytest
+gradio
+pandas
+httpx
+requests>=2.31.0
+paho-mqtt>=2.1.0
+websocket-client>=1.8.0
+ultralytics
+lap>=0.5.12
+facenet-pytorch
+pillow
+pgvector
+websockets>=12.0
+aiortc>=1.9.0
+av>=12.0.0
+
+[:sys_platform != "linux"]
+fast-alpr
+
+[:sys_platform == "linux"]
+fast-alpr[onnx-gpu]

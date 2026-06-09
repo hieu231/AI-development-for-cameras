@@ -1,0 +1,74 @@
+Metadata-Version: 2.4
+Name: petrolimex-ai-backend
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: ==3.12.6
+Description-Content-Type: text/markdown
+Requires-Dist: psycopg2-binary>=2.9.9
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: torch
+Requires-Dist: torchvision
+Requires-Dist: pytest
+Requires-Dist: gradio
+Requires-Dist: pandas
+Requires-Dist: httpx
+Requires-Dist: requests>=2.31.0
+Requires-Dist: paho-mqtt>=2.1.0
+Requires-Dist: websocket-client>=1.8.0
+Requires-Dist: fast-alpr[onnx-gpu]; sys_platform == "linux"
+Requires-Dist: fast-alpr; sys_platform != "linux"
+Requires-Dist: ultralytics
+Requires-Dist: lap>=0.5.12
+Requires-Dist: facenet-pytorch
+Requires-Dist: pillow
+Requires-Dist: pgvector
+Requires-Dist: websockets>=12.0
+Requires-Dist: aiortc>=1.9.0
+Requires-Dist: av>=12.0.0
+
+# Petrolimex AI Backend
+
+Multi-camera AI detection system for gas stations with real-time processing and event management.
+
+## Quick Start
+
+### Development (Local)
+
+```text
+# 1. Install dependencies
+uv sync
+
+# 2. Setup environment
+cp .env.example .env
+# Edit .env and set your database credentials
+
+# 3. Run the API server (MAIN APPLICATION)
+python -m src.server  # API: http://localhost:8668/docs
+```
+
+Linux / Bash:
+
+```bash
+cd /path/to/petrolimex-ai-backend
+source .venv/bin/activate
+DB_HOST=localhost DB_USER=dang321 DB_NAME=petrobe_db DB_PASSWORD=Dang2510 DB_PORT=5433 python -m src.server
+```
+VSS_FIXED_TOKEN=ec39f13732a24a5bb4edccbaa787f3de VSS_STREAM_PORT_HTTP=33122 DB_HOST=localhost DB_USER=dang321 DB_NAME=petrobe_db DB_PASSWORD=Dang2510 DB_PORT=5433 python -m src.server
+
+
+Sync models in Bash/Linux:
+
+```bash
+cd /path/to/petrolimex-ai-backend
+source .venv/bin/activate
+DB_HOST=localhost DB_USER=dang321 DB_NAME=petrobe_db DB_PASSWORD=Dang2510 DB_PORT=5433 python -m scripts.sync_models_to_db
+```
+
+
+sudo apt install postgresql-client
+
+lsof -i :8668 | awk 'NR>1 {print $2}' | xargs -r kill

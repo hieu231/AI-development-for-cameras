@@ -1,0 +1,9 @@
+/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/server.py:57: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Will watch for changes in these directories: ['/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/ai_models', '/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/api', '/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/core', '/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/face_recognition', '/home/pathtech/Desktop/Here v2/petro_ai_be_jetson/src/models']
+ERROR:    [Errno 98] Address already in use

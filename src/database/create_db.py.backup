@@ -1,0 +1,602 @@
+"""
+AI Box Camera Control - MVP Database Schema Setup
+PostgreSQL database creation and schema initialization
+"""
+
+import os
+import sys
+from typing import Optional
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (override existing env vars)
+load_dotenv(override=True)
+
+
+# SQL Schema Definition
+SCHEMA_SQL = """
+-- Petrolimex AI Backend Database Schema
+-- PostgreSQL with pgvector extension for face recognition
+BEGIN;
+
+-- Enable pgvector extension for face embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
+
+
+CREATE TABLE IF NOT EXISTS public.ai_models
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    version character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    description character varying(500) COLLATE pg_catalog."default",
+    model_path character varying(500) COLLATE pg_catalog."default",
+    parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+    is_active boolean NOT NULL DEFAULT true,
+    is_latest_used boolean NOT NULL DEFAULT true,
+    previous_used_version_id uuid,
+    changelog text COLLATE pg_catalog."default",
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT ai_models_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_ai_models_name_version UNIQUE (name, version)
+);
+
+CREATE TABLE IF NOT EXISTS public.camera_models
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    camera_id uuid NOT NULL,
+    model_id uuid NOT NULL,
+    is_enabled boolean NOT NULL DEFAULT true,
+    additional_parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+    assigned_at timestamp without time zone NOT NULL DEFAULT now(),
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    is_deleted boolean NOT NULL DEFAULT false,
+    CONSTRAINT camera_models_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_camera_models_camera_model UNIQUE (camera_id, model_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.camera_spec
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name character varying(100) COLLATE pg_catalog."default" NOT NULL,
+    manufacturer character varying(100) COLLATE pg_catalog."default" NOT NULL,
+    model_series character varying(100) COLLATE pg_catalog."default",
+    category character varying(50) COLLATE pg_catalog."default" CHECK (category IN ('Dome', 'Bullet', 'PTZ', 'Box', 'Fisheye', 'Unknown')),
+    resolution character varying(20) COLLATE pg_catalog."default",
+    max_fps integer,
+    ptz_support boolean NOT NULL DEFAULT false,
+    audio_support boolean NOT NULL DEFAULT false,
+    ir_support boolean NOT NULL DEFAULT false,
+    ai_support boolean NOT NULL DEFAULT false,
+    onvif_profile character varying(20) COLLATE pg_catalog."default",
+    brand_website character varying(255) COLLATE pg_catalog."default",
+    brand_description text COLLATE pg_catalog."default",
+    rtsp_format text COLLATE pg_catalog."default",
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT camera_spec_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_camera_spec_manufacturer_model UNIQUE (manufacturer, model_series)
+);
+
+CREATE TABLE IF NOT EXISTS public.cameras
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    rtsp_url text COLLATE pg_catalog."default" NOT NULL,
+    location_id uuid NOT NULL,
+    raw_resolution character varying(50) COLLATE pg_catalog."default",
+    preprocess_resolution character varying(50) COLLATE pg_catalog."default",
+    status boolean NOT NULL DEFAULT true,
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    camera_spec_id uuid,
+    CONSTRAINT cameras_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.data_access_logs
+(
+    id bigserial NOT NULL,
+    "timestamp" timestamp without time zone NOT NULL DEFAULT now(),
+    user_id uuid NOT NULL,
+    data_type character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    access_type character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    CONSTRAINT data_access_logs_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.events
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    "time" timestamp without time zone NOT NULL DEFAULT now(),
+    camera_id uuid NOT NULL,
+    model_id uuid NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    image_path text COLLATE pg_catalog."default",
+    CONSTRAINT events_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.locations
+(
+    id uuid NOT NULL,
+    name character varying COLLATE pg_catalog."default" NOT NULL,
+    description character varying COLLATE pg_catalog."default",
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT locations_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.performance
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    "time" timestamp without time zone NOT NULL DEFAULT now(),
+    camera_id uuid NOT NULL,
+    cpu double precision,
+    gpu double precision,
+    ram double precision,
+    vram double precision,
+    temp double precision,
+    avg_fps double precision,
+    max_fps double precision,
+    min_fps double precision,
+    CONSTRAINT performance_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.permissions
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name character varying(100) COLLATE pg_catalog."default" NOT NULL,
+    resource character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    action character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    description text COLLATE pg_catalog."default",
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT permissions_pkey PRIMARY KEY (id),
+    CONSTRAINT permissions_name_key UNIQUE (name)
+);
+
+CREATE TABLE IF NOT EXISTS public.role_permissions
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    role_id uuid NOT NULL,
+    permission_id uuid NOT NULL,
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT role_permissions_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_role_permissions UNIQUE (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.roles
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    name character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    description text COLLATE pg_catalog."default",
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT roles_pkey PRIMARY KEY (id),
+    CONSTRAINT roles_name_key UNIQUE (name)
+);
+
+CREATE TABLE IF NOT EXISTS public.users
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    email character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    password_hash character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    full_name character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    role_id uuid NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    password_changed_at timestamp without time zone NOT NULL DEFAULT now(),
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    emp_id character varying(10) COLLATE pg_catalog."default",
+    CONSTRAINT users_pkey PRIMARY KEY (id),
+    CONSTRAINT users_email_key UNIQUE (email)
+);
+
+ALTER TABLE IF EXISTS public.ai_models
+    ADD CONSTRAINT ai_models_previous_version_id_fkey FOREIGN KEY (previous_used_version_id)
+    REFERENCES public.ai_models (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_models_previous
+    ON public.ai_models(previous_used_version_id);
+
+
+ALTER TABLE IF EXISTS public.camera_models
+    ADD CONSTRAINT camera_models_camera_id_fkey FOREIGN KEY (camera_id)
+    REFERENCES public.cameras (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_camera_models_camera
+    ON public.camera_models(camera_id);
+
+
+ALTER TABLE IF EXISTS public.camera_models
+    ADD CONSTRAINT camera_models_model_id_fkey FOREIGN KEY (model_id)
+    REFERENCES public.ai_models (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION;
+CREATE INDEX IF NOT EXISTS idx_camera_models_model
+    ON public.camera_models(model_id);
+
+
+ALTER TABLE IF EXISTS public.cameras
+    ADD CONSTRAINT cameras_camera_spec_id_fkey FOREIGN KEY (camera_spec_id)
+    REFERENCES public.camera_spec (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.cameras
+    ADD CONSTRAINT cameras_location_id_fkey FOREIGN KEY (location_id)
+    REFERENCES public.locations (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION
+    NOT VALID;
+
+
+ALTER TABLE IF EXISTS public.data_access_logs
+    ADD CONSTRAINT data_access_logs_user_id_fkey FOREIGN KEY (user_id)
+    REFERENCES public.users (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+
+
+ALTER TABLE IF EXISTS public.events
+    ADD CONSTRAINT events_camera_id_fkey FOREIGN KEY (camera_id)
+    REFERENCES public.cameras (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+
+
+ALTER TABLE IF EXISTS public.events
+    ADD CONSTRAINT events_model_id_fkey FOREIGN KEY (model_id)
+    REFERENCES public.ai_models (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION;
+
+
+ALTER TABLE IF EXISTS public.performance
+    ADD CONSTRAINT performance_camera_id_fkey FOREIGN KEY (camera_id)
+    REFERENCES public.cameras (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+
+
+ALTER TABLE IF EXISTS public.role_permissions
+    ADD CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id)
+    REFERENCES public.permissions (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission
+    ON public.role_permissions(permission_id);
+
+
+ALTER TABLE IF EXISTS public.role_permissions
+    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id)
+    REFERENCES public.roles (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role
+    ON public.role_permissions(role_id);
+
+
+ALTER TABLE IF EXISTS public.users
+    ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id)
+    REFERENCES public.roles (id) MATCH SIMPLE
+    ON UPDATE NO ACTION
+    ON DELETE NO ACTION;
+CREATE INDEX IF NOT EXISTS idx_users_role
+    ON public.users(role_id);
+
+
+-- ============================================
+-- Face Recognition Tables
+-- ============================================
+
+-- Enable pgvector extension for storing face embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS public.face_photo
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    image_path character varying(500) COLLATE pg_catalog."default",
+    face_embedding vector(512),
+    is_primary boolean NOT NULL DEFAULT false,
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT face_photo_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.face_profiles
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    employee_id character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    employee_name character varying(255) COLLATE pg_catalog."default" NOT NULL,
+    avg_face_embedding vector(512),
+    photo_ids uuid[] NOT NULL DEFAULT '{}',
+    profile_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    consent_date date,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamp without time zone NOT NULL DEFAULT now(),
+    updated_at timestamp without time zone NOT NULL DEFAULT now(),
+    CONSTRAINT face_profiles_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_employee_id UNIQUE (employee_id)
+);
+
+-- Index for faster similarity search on embeddings
+CREATE INDEX IF NOT EXISTS idx_face_profiles_embedding
+    ON public.face_profiles USING ivfflat (avg_face_embedding vector_cosine_ops)
+    WITH (lists = 100);
+
+CREATE INDEX IF NOT EXISTS idx_face_photo_embedding
+    ON public.face_photo USING ivfflat (face_embedding vector_cosine_ops)
+    WITH (lists = 100);
+
+-- Index for employee lookups
+CREATE INDEX IF NOT EXISTS idx_face_profiles_employee_id
+    ON public.face_profiles(employee_id);
+
+-- Index for active profiles
+CREATE INDEX IF NOT EXISTS idx_face_profiles_is_active
+    ON public.face_profiles(is_active);
+
+END;
+"""
+
+
+def clear_all_data(db_config: dict):
+    """
+    Clear all data from all tables while keeping the schema
+
+    Args:
+        db_config: Dictionary containing database connection parameters
+    """
+    try:
+        # Connect to the target database
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+
+        print(f"Clearing all data from database '{db_config['database']}'...")
+
+        # Get all table names
+        cursor.execute("""
+            SELECT tablename
+            FROM pg_tables
+            WHERE schemaname = 'public'
+            ORDER BY tablename
+        """)
+        tables = cursor.fetchall()
+
+        if not tables:
+            print("✓ No tables found to clear")
+            cursor.close()
+            conn.close()
+            return True
+
+        # Disable foreign key constraints temporarily
+        cursor.execute("SET session_replication_role = 'replica';")
+
+        # Truncate all tables
+        for table in tables:
+            table_name = table[0]
+            print(f"  Clearing table: {table_name}")
+            cursor.execute(f'TRUNCATE TABLE "{table_name}" CASCADE;')
+
+        # Re-enable foreign key constraints
+        cursor.execute("SET session_replication_role = 'origin';")
+
+        conn.commit()
+        print(f"✓ Cleared data from {len(tables)} tables")
+
+        cursor.close()
+        conn.close()
+        return True
+
+    except psycopg2.Error as e:
+        print(f"✗ Error clearing data: {e}")
+        return False
+
+
+def get_db_config():
+    """Get database configuration from environment variables"""
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'postgres'),
+        'database': os.getenv('DB_NAME', 'petrolimex_ai'),
+    }
+
+
+def create_database(db_name: str, admin_user: str = 'postgres',
+                   admin_password: str = 'postgres',
+                   host: str = 'localhost', port: str = '5432',
+                   drop_existing: bool = False):
+    """
+    Create a new PostgreSQL database, optionally dropping existing one
+
+    Args:
+        db_name: Name of the database to create
+        admin_user: PostgreSQL admin user
+        admin_password: PostgreSQL admin password
+        host: Database host
+        port: Database port
+        drop_existing: Whether to drop existing database before creating
+    """
+    try:
+        # Connect to default postgres database
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            user=admin_user,
+            password=admin_password,
+            database='postgres'
+        )
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor = conn.cursor()
+
+        # Drop existing database if requested
+        if drop_existing:
+            print(f"Dropping existing database '{db_name}' if it exists...")
+            # Terminate all connections to the database first
+            cursor.execute(f"""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = '{db_name}' AND pid <> pg_backend_pid()
+            """)
+            # Now drop the database
+            cursor.execute(f'DROP DATABASE IF EXISTS {db_name}')
+            print(f"✓ Database '{db_name}' dropped successfully")
+
+        # Check if database exists
+        cursor.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s",
+            (db_name,)
+        )
+        exists = cursor.fetchone()
+        
+        if not exists:
+            print(f"Creating database '{db_name}'...")
+            cursor.execute(f'CREATE DATABASE {db_name}')
+            print(f"✓ Database '{db_name}' created successfully")
+        else:
+            print(f"✓ Database '{db_name}' already exists")
+        
+        cursor.close()
+        conn.close()
+        return True
+        
+    except psycopg2.Error as e:
+        print(f"✗ Error creating database: {e}")
+        return False
+
+
+def initialize_schema(db_config: dict):
+    """
+    Initialize database schema with all tables and indexes
+    
+    Args:
+        db_config: Dictionary containing database connection parameters
+    """
+    try:
+        # Connect to the target database
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+        
+        print(f"Initializing schema for database '{db_config['database']}'...")
+        
+        # Execute schema SQL
+        cursor.execute(SCHEMA_SQL)
+        conn.commit()
+        
+        print("✓ Schema initialized successfully")
+        
+        # Verify tables created
+        cursor.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            ORDER BY table_name
+        """)
+        tables = cursor.fetchall()
+        
+        print(f"\n✓ Created {len(tables)} tables:")
+        for table in tables:
+            print(f"  - {table[0]}")
+        
+        cursor.close()
+        conn.close()
+        return True
+        
+    except psycopg2.Error as e:
+        print(f"✗ Error initializing schema: {e}")
+        return False
+
+
+def main(drop_existing: bool = False, clear_data: bool = False):
+    """Main function to create database and initialize schema
+
+    Args:
+        drop_existing: Whether to drop existing database before creating new one
+        clear_data: Whether to clear all data from existing tables (keeps schema)
+    """
+    print("=" * 60)
+    print("Petrolimex AI Backend - Database Setup")
+    if drop_existing:
+        print("⚠️  DROP EXISTING DATABASE MODE ENABLED")
+    if clear_data:
+        print("🧹 CLEAR DATA MODE ENABLED")
+    print("=" * 60)
+    print()
+
+    # Get configuration
+    config = get_db_config()
+    db_name = config['database']
+
+    print("Database Configuration:")
+    print(f"  Host: {config['host']}")
+    print(f"  Port: {config['port']}")
+    print(f"  User: {config['user']}")
+    print(f"  Database: {db_name}")
+    print()
+
+    # Handle clear data mode (just clear existing data)
+    if clear_data:
+        success = clear_all_data(config)
+        if success:
+            print()
+            print("=" * 60)
+            print("✓ Data clearing completed successfully!")
+            print("=" * 60)
+        else:
+            print("\n✗ Data clearing failed")
+            sys.exit(1)
+        return
+
+    # Step 1: Create database
+    success = create_database(
+        db_name=db_name,
+        admin_user=config['user'],
+        admin_password=config['password'],
+        host=config['host'],
+        port=config['port'],
+        drop_existing=drop_existing
+    )
+
+    if not success:
+        print("\n✗ Database creation failed")
+        sys.exit(1)
+
+    print()
+
+    # Step 2: Initialize schema
+    success = initialize_schema(config)
+
+    if not success:
+        print("\n✗ Schema initialization failed")
+        sys.exit(1)
+
+    print()
+    print("=" * 60)
+    print("✓ Database setup completed successfully!")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Petrolimex AI Backend Database Setup')
+    parser.add_argument('--drop-existing', action='store_true',
+                       help='Drop existing database before creating new one')
+    parser.add_argument('--clear-data', action='store_true',
+                       help='Clear all data from existing tables (keeps schema)')
+
+    args = parser.parse_args()
+
+    # Validate arguments - cannot use both options together
+    if args.drop_existing and args.clear_data:
+        parser.error("Cannot use --drop-existing and --clear-data together")
+
+    main(drop_existing=args.drop_existing, clear_data=args.clear_data)
+

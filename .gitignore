@@ -1,0 +1,39 @@
+.env
+.env.backup
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Evidence / output
+evidence_image/
+
+# Model weights (large binaries)
+*.pt
+*.pth
+*.onnx
+*.weights
+*.engine
+*.trt
+!src/ai_models/model_weights/tran_dau.pt
+!src/ai_models/model_weights/oil_cap_detection.pt
+
+# Training data & runs
+src/train/
+runs/
+
+# OS / IDE
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Logs & databases
+*.log
+*.db
+*.sqlite
+.claude/settings.local.json
+
+# Auto-generated MCP server context (added automatically)
+.mcp-server-context.md

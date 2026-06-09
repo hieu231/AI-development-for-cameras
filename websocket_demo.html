@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petrolimex AI - WebSocket Event Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-connect {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-connect:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .btn-disconnect {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-disconnect:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .btn-clear {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .status {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-connected {
+            background: #28a745;
+        }
+
+        .status-disconnected {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .events {
+            padding: 30px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .event-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .event-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .event-time {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .event-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .event-field {
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .event-field-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+
+        .event-field-value {
+            font-weight: 600;
+            color: #333;
+            word-break: break-word;
+        }
+
+        .event-metadata {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .event-metadata pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.9em;
+            color: #495057;
+        }
+
+        .no-events {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .no-events-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .stats {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎥 Petrolimex AI - Real-Time Event Monitor</h1>
+            <p>WebSocket Event Broadcasting Dashboard</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="wsUrl">WebSocket URL</label>
+                    <input type="text" id="wsUrl" value="ws://192.168.1.15:8668/ws/events" placeholder="ws://192.168.1.15:8668/ws/events">
+                </div>
+                <div class="control-group">
+                    <label for="cameraId">Camera ID (Optional)</label>
+                    <input type="text" id="cameraId" placeholder="Leave empty for all cameras">
+                </div>
+            </div>
+            <div class="control-row">
+                <button class="btn-connect" onclick="connect()">Connect</button>
+                <button class="btn-disconnect" onclick="disconnect()">Disconnect</button>
+                <button class="btn-clear" onclick="clearEvents()">Clear Events</button>
+            </div>
+        </div>
+
+        <div class="status">
+            <span class="status-indicator status-disconnected" id="statusIndicator"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+
+        <div class="events" id="eventsContainer">
+            <div class="no-events">
+                <div class="no-events-icon">📡</div>
+                <h3>No events yet</h3>
+                <p>Connect to WebSocket and wait for events...</p>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="eventCount">0</div>
+                <div class="stat-label">Events Received</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="uptime">0s</div>
+                <div class="stat-label">Connection Time</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let eventCount = 0;
+        let connectionStartTime = null;
+        let uptimeInterval = null;
+
+        function connect() {
+            const wsUrl = document.getElementById('wsUrl').value;
+            const cameraId = document.getElementById('cameraId').value.trim();
+
+            // Build WebSocket URL
+            let url = wsUrl;
+            if (cameraId) {
+                // Replace /events with /events/{camera_id}
+                url = wsUrl.replace(/\/events$/, `/events/${cameraId}`);
+            }
+
+            try {
+                ws = new WebSocket(url);
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateStatus(true);
+                    connectionStartTime = Date.now();
+                    startUptimeCounter();
+
+                    // Send ping to test connection
+                    ws.send('ping');
+                };
+
+                ws.onmessage = (event) => {
+                    console.log('Message received:', event.data);
+
+                    // Skip pong responses
+                    if (event.data === 'pong') {
+                        console.log('Pong received');
+                        return;
+                    }
+
+                    try {
+                        const eventData = JSON.parse(event.data);
+                        addEvent(eventData);
+                        eventCount++;
+                        updateEventCount();
+                    } catch (e) {
+                        console.error('Error parsing event:', e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    updateStatus(false);
+                    stopUptimeCounter();
+                };
+            } catch (e) {
+                console.error('Connection error:', e);
+                alert('Failed to connect: ' + e.message);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function updateStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                indicator.className = 'status-indicator status-connected';
+                text.textContent = 'Connected';
+            } else {
+                indicator.className = 'status-indicator status-disconnected';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function addEvent(eventData) {
+            const container = document.getElementById('eventsContainer');
+
+            // Remove "no events" message if it exists
+            const noEvents = container.querySelector('.no-events');
+            if (noEvents) {
+                noEvents.remove();
+            }
+
+            const eventCard = document.createElement('div');
+            eventCard.className = 'event-card';
+
+            const time = new Date(eventData.time || Date.now()).toLocaleString();
+
+            eventCard.innerHTML = `
+                <div class="event-header">
+                    <div class="event-title">🔔 ${eventData.model_name || 'Unknown Model'}</div>
+                    <div class="event-time">${time}</div>
+                </div>
+                <div class="event-details">
+                    <div class="event-field">
+                        <div class="event-field-label">Event ID</div>
+                        <div class="event-field-value">${eventData.event_id || 'N/A'}</div>
+                    </div>
+                    <div class="event-field">
+                        <div class="event-field-label">Camera</div>
+                        <div class="event-field-value">${eventData.camera_name || 'Unknown'}</div>
+                    </div>
+                    <div class="event-field">
+                        <div class="event-field-label">Model Type</div>
+                        <div class="event-field-value">${eventData.model_type || 'N/A'}</div>
+                    </div>
+                    <div class="event-field">
+                        <div class="event-field-label">Image Path</div>
+                        <div class="event-field-value">${eventData.image_path || 'No image'}</div>
+                    </div>
+                </div>
+                <div class="event-metadata">
+                    <div class="event-field-label">Metadata</div>
+                    <pre>${JSON.stringify(eventData.metadata || {}, null, 2)}</pre>
+                </div>
+            `;
+
+            // Insert at the top
+            container.insertBefore(eventCard, container.firstChild);
+
+            // Limit to 50 events
+            const events = container.querySelectorAll('.event-card');
+            if (events.length > 50) {
+                events[events.length - 1].remove();
+            }
+        }
+
+        function clearEvents() {
+            const container = document.getElementById('eventsContainer');
+            container.innerHTML = `
+                <div class="no-events">
+                    <div class="no-events-icon">📡</div>
+                    <h3>No events yet</h3>
+                    <p>Connect to WebSocket and wait for events...</p>
+                </div>
+            `;
+            eventCount = 0;
+            updateEventCount();
+        }
+
+        function updateEventCount() {
+            document.getElementById('eventCount').textContent = eventCount;
+        }
+
+        function startUptimeCounter() {
+            uptimeInterval = setInterval(() => {
+                if (connectionStartTime) {
+                    const uptime = Math.floor((Date.now() - connectionStartTime) / 1000);
+                    document.getElementById('uptime').textContent = formatUptime(uptime);
+                }
+            }, 1000);
+        }
+
+        function stopUptimeCounter() {
+            if (uptimeInterval) {
+                clearInterval(uptimeInterval);
+                uptimeInterval = null;
+            }
+            document.getElementById('uptime').textContent = '0s';
+        }
+
+        function formatUptime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+
+            if (h > 0) {
+                return `${h}h ${m}m ${s}s`;
+            } else if (m > 0) {
+                return `${m}m ${s}s`;
+            } else {
+                return `${s}s`;
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>
